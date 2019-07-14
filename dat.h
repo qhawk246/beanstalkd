@@ -31,7 +31,7 @@ typedef struct Wal    Wal;
 typedef void(*ms_event_fn)(ms a, void *item, size_t i);
 typedef void(*Handle)(void*, int rw);
 typedef int(*Less)(void*, void*);
-typedef void(*Record)(void*, int);
+typedef void(*Record)(void*, size_t);
 typedef int(FAlloc)(int, int);
 
 #if _LP64
@@ -57,6 +57,11 @@ typedef int(FAlloc)(int, int);
 #define URGENT_THRESHOLD 1024
 #define JOB_DATA_SIZE_LIMIT_DEFAULT ((1 << 16) - 1)
 
+/* Maximum value (uint32) allowed in pri, delay and ttr parameters */
+#define MAX_UINT32 4294967295
+
+#define UNUSED_PARAMETER(x) (void)(x)
+
 extern const char version[];
 extern int verbose;
 extern struct Server srv;
@@ -76,14 +81,14 @@ struct stats {
 
 
 struct Heap {
-    int     cap;
-    int     len;
+    size_t  cap;
+    size_t  len;
     void    **data;
     Less    less;
     Record  rec;
 };
 int   heapinsert(Heap *h, void *x);
-void* heapremove(Heap *h, int k);
+void* heapremove(Heap *h, size_t k);
 
 
 struct Socket {
@@ -205,7 +210,7 @@ void job_free(job j);
 job job_find(uint64 job_id);
 
 /* the void* parameters are really job pointers */
-void job_setheappos(void*, int);
+void job_setheappos(void*, size_t);
 int job_pri_less(void*, void*);
 int job_delay_less(void*, void*);
 
@@ -274,9 +279,9 @@ struct Conn {
     int    pending_timeout;
     char   halfclosed;
 
-    char cmd[LINE_BUF_SIZE]; // this string is NOT NUL-terminated
-    int  cmd_len;
-    int  cmd_read;
+    char   cmd[LINE_BUF_SIZE]; // this string is NOT NUL-terminated
+    size_t cmd_len;
+    int    cmd_read;
 
     char *reply;
     int  reply_len;
@@ -339,7 +344,7 @@ void walinit(Wal*, job list);
 int  walwrite(Wal*, job);
 void walmaint(Wal*);
 int  walresvput(Wal*, job);
-int  walresvupdate(Wal*, job);
+int  walresvupdate(Wal*);
 void walgc(Wal*);
 
 

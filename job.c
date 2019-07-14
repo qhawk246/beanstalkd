@@ -14,7 +14,7 @@ static size_t all_jobs_used = 0;
 
 static int hash_table_was_oom = 0;
 
-static void rehash();
+static void rehash(int);
 
 static int
 _get_job_hash_index(uint64 job_id)
@@ -105,7 +105,7 @@ allocate_job(int body_size)
 }
 
 job
-make_job_with_id(uint pri, int64 delay, int64 ttr,
+make_job_with_id(uint32 pri, int64 delay, int64 ttr,
                  int body_size, tube tube, uint64 id)
 {
     job j;
@@ -158,7 +158,7 @@ job_free(job j)
 }
 
 void
-job_setheappos(void *j, int pos)
+job_setheappos(void *j, size_t pos)
 {
     ((job)j)->heap_index = pos;
 }
