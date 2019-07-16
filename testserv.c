@@ -60,10 +60,11 @@ muststart(char *a0, char *a1, char *a2, char *a3, char *a4)
 static int
 mustdiallocal(int port)
 {
-    struct sockaddr_in addr = {};
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port),
+    };
 
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
     int r = inet_aton("127.0.0.1", &addr.sin_addr);
     if (!r) {
         errno = EINVAL;
@@ -167,7 +168,6 @@ mustforksrv(void)
     prot_init();
 
     if (srv.wal.use) {
-        struct job list = {};
         // We want to make sure that only one beanstalkd tries
         // to use the wal directory at a time. So acquire a lock
         // now and never release it.
@@ -176,6 +176,10 @@ mustforksrv(void)
             exit(10);
         }
 
+        struct job list = {
+            .prev = NULL,
+            .next = NULL,
+        };
         list.prev = list.next = &list;
         walinit(&srv.wal, &list);
         int ok = prot_replay(&srv, &list);
@@ -322,6 +326,137 @@ cttest_too_long_commandline()
 }
 
 void
+cttest_put_in_drain()
+{
+    enter_drain_mode(SIGUSR1);
+    port = SERVER();
+    fd = mustdiallocal(port);
+    mustsend(fd, "put 0 0 1 1\r\n");
+    mustsend(fd, "x\r\n");
+    ckresp(fd, "DRAINING\r\n");
+}
+
+void
+cttest_peek_ok()
+{
+    port = SERVER();
+    fd = mustdiallocal(port);
+    mustsend(fd, "put 0 0 1 1\r\n");
+    mustsend(fd, "a\r\n");
+    ckresp(fd, "INSERTED 1\r\n");
+
+    mustsend(fd, "peek 1\r\n");
+    ckresp(fd, "FOUND 1 1\r\n");
+    ckresp(fd, "a\r\n");
+}
+
+void
+cttest_peek_not_found()
+{
+    port = SERVER();
+    fd = mustdiallocal(port);
+    mustsend(fd, "put 0 0 1 1\r\n");
+    mustsend(fd, "a\r\n");
+    ckresp(fd, "INSERTED 1\r\n");
+
+    mustsend(fd, "peek 2\r\n");
+    ckresp(fd, "NOT_FOUND\r\n");
+    mustsend(fd, "peek 18446744073709551615\r\n");  // max uint64
+    ckresp(fd, "NOT_FOUND\r\n");
+}
+
+/*
+  TODO: Enable this test after fixing #464.
+void
+cttest_peek_bad_format()
+{
+    port = SERVER();
+    fd = mustdiallocal(port);
+    mustsend(fd, "peek 18446744073709551616\r\n");
+    ckresp(fd, "BAD_FORMAT\r\n");
+
+    mustsend(fd, "peek foo111\r\n");
+    ckresp(fd, "BAD_FORMAT\r\n");
+}
+*/
+
+void
+cttest_peek_delayed()
+{
+    port = SERVER();
+    fd = mustdiallocal(port);
+    mustsend(fd, "peek-delayed\r\n");
+    ckresp(fd, "NOT_FOUND\r\n");
+
+    mustsend(fd, "put 0 0 1 1\r\n");
+    mustsend(fd, "A\r\n");
+    ckresp(fd, "INSERTED 1\r\n");
+    mustsend(fd, "put 0 99 1 1\r\n");
+    mustsend(fd, "B\r\n");
+    ckresp(fd, "INSERTED 2\r\n");
+    mustsend(fd, "put 0 1 1 1\r\n");
+    mustsend(fd, "C\r\n");
+    ckresp(fd, "INSERTED 3\r\n");
+
+    mustsend(fd, "peek-delayed\r\n");
+    ckresp(fd, "FOUND 3 1\r\n");
+    ckresp(fd, "C\r\n");
+
+    mustsend(fd, "delete 3\r\n");
+    ckresp(fd, "DELETED\r\n");
+
+    mustsend(fd, "peek-delayed\r\n");
+    ckresp(fd, "FOUND 2 1\r\n");
+    ckresp(fd, "B\r\n");
+
+    mustsend(fd, "delete 2\r\n");
+    ckresp(fd, "DELETED\r\n");
+
+    mustsend(fd, "peek-delayed\r\n");
+    ckresp(fd, "NOT_FOUND\r\n");
+}
+
+void
+cttest_peek_buried_kick()
+{
+    port = SERVER();
+    fd = mustdiallocal(port);
+    mustsend(fd, "put 0 0 1 1\r\n");
+    mustsend(fd, "A\r\n");
+    ckresp(fd, "INSERTED 1\r\n");
+
+    mustsend(fd, "bury 1 0\r\n");
+    ckresp(fd, "NOT_FOUND\r\n");
+
+    mustsend(fd, "peek-buried\r\n");
+    ckresp(fd, "NOT_FOUND\r\n");
+
+    mustsend(fd, "reserve-with-timeout 0\r\n");
+    ckresp(fd, "RESERVED 1 1\r\n");
+    ckresp(fd, "A\r\n");
+
+    mustsend(fd, "bury 1 0\r\n");
+    ckresp(fd, "BURIED\r\n");
+
+    mustsend(fd, "peek-buried\r\n");
+    ckresp(fd, "FOUND 1 1\r\n");
+    ckresp(fd, "A\r\n");
+
+    mustsend(fd, "kick 1\r\n");
+    ckresp(fd, "KICKED 1\r\n");
+
+    mustsend(fd, "peek-buried\r\n");
+    ckresp(fd, "NOT_FOUND\r\n");
+
+    mustsend(fd, "peek-ready\r\n");
+    ckresp(fd, "FOUND 1 1\r\n");
+    ckresp(fd, "A\r\n");
+
+    mustsend(fd, "kick 1\r\n");
+    ckresp(fd, "KICKED 0\r\n");
+}
+
+void
 cttest_pause()
 {
     int64 s;
@@ -371,6 +506,46 @@ cttest_too_big()
     mustsend(fd, "x\r\n");
     ckresp(fd, "JOB_TOO_BIG\r\n");
     ckresp(fd, "INSERTED 1\r\n");
+}
+
+void
+cttest_job_size_invalid()
+{
+    job_data_size_limit = JOB_DATA_SIZE_LIMIT_MAX;
+    port = SERVER();
+    fd = mustdiallocal(port);
+    mustsend(fd, "put 0 0 0 4294967296\r\n");
+    mustsend(fd, "put 0 0 0 10b\r\n");
+    mustsend(fd, "put 0 0 0 --!@#$%^&&**()0b\r\n");
+    mustsend(fd, "put 0 0 0 1\r\n");
+    mustsend(fd, "x\r\n");
+    ckresp(fd, "BAD_FORMAT\r\n");
+    ckresp(fd, "BAD_FORMAT\r\n");
+    ckresp(fd, "BAD_FORMAT\r\n");
+    ckresp(fd, "INSERTED 1\r\n");
+}
+
+void
+cttest_job_size_max_plus_1()
+{
+    /* verify that server reject the job larger than maximum allowed. */
+    job_data_size_limit = JOB_DATA_SIZE_LIMIT_MAX;
+    port = SERVER();
+    fd = mustdiallocal(port);
+    mustsend(fd, "put 0 0 0 1073741825\r\n");
+
+    const int len = 1024*1024;
+    char body[len+1];
+    memset(body, 'a', len);
+    body[len] = 0;
+
+    int i;
+    for (i=0; i<JOB_DATA_SIZE_LIMIT_MAX; i+=len) {
+        mustsend(fd, body);
+    }
+    mustsend(fd, "x");
+    mustsend(fd, "\r\n");
+    ckresp(fd, "JOB_TOO_BIG\r\n");
 }
 
 void
@@ -674,6 +849,69 @@ cttest_reserve_with_timeout_2conns()
 }
 
 void
+cttest_reserve_ttr_deadline_soon()
+{
+    port = SERVER();
+    int prod = mustdiallocal(port);
+
+    mustsend(prod, "put 0 0 1 1\r\n");
+    mustsend(prod, "a\r\n");
+    ckresp(prod, "INSERTED 1\r\n");
+
+    mustsend(prod, "reserve-with-timeout 1\r\n");
+    ckresp(prod, "RESERVED 1 1\r\n");
+    ckresp(prod, "a\r\n");
+
+    // After 0.3s the job should be still reserved.
+    usleep(300000);
+    mustsend(prod, "stats-job 1\r\n");
+    ckrespsub(prod, "OK ");
+    ckrespsub(prod, "\nstate: reserved\n");
+
+    mustsend(prod, "reserve-with-timeout 1\r\n");
+    ckresp(prod, "DEADLINE_SOON\r\n");
+
+    // Job should be reserved; last "reserve" took less than 1s.
+    mustsend(prod, "stats-job 1\r\n");
+    ckrespsub(prod, "OK ");
+    ckrespsub(prod, "\nstate: reserved\n");
+
+    // We don't want to process the job, so release it and check that it's ready.
+    mustsend(prod, "release 1 0 0\r\n");
+    ckresp(prod, "RELEASED\r\n");
+    mustsend(prod, "stats-job 1\r\n");
+    ckrespsub(prod, "OK ");
+    ckrespsub(prod, "\nstate: ready\n");
+}
+
+void
+cttest_close_frees_job()
+{
+    port = SERVER();
+    int cons = mustdiallocal(port);
+    int prod = mustdiallocal(port);
+    mustsend(cons, "reserve-with-timeout 1\r\n");
+
+    mustsend(prod, "put 0 0 100 1\r\n");
+    mustsend(prod, "a\r\n");
+    ckresp(prod, "INSERTED 1\r\n");
+
+    ckresp(cons, "RESERVED 1 1\r\n");
+    ckresp(cons, "a\r\n");
+
+    mustsend(prod, "stats-job 1\r\n");
+    ckrespsub(prod, "OK ");
+    ckrespsub(prod, "\nstate: reserved\n");
+
+    // Closed consumer connection should make the job ready again.
+    close(cons);
+
+    mustsend(prod, "stats-job 1\r\n");
+    ckrespsub(prod, "OK ");
+    ckrespsub(prod, "\nstate: ready\n");
+}
+
+void
 cttest_unpause_tube()
 {
     int fd0, fd1;
@@ -698,6 +936,49 @@ cttest_unpause_tube()
     // test will not pass.
     ckresp(fd1, "RESERVED 1 0\r\n");
     ckresp(fd1, "\r\n");
+}
+
+void
+cttest_list_tube()
+{
+    port = SERVER();
+    int fd0 = mustdiallocal(port);
+
+    mustsend(fd0, "watch w\r\n");
+    ckresp(fd0, "WATCHING 2\r\n");
+
+    mustsend(fd0, "use u\r\n");
+    ckresp(fd0, "USING u\r\n");
+
+    mustsend(fd0, "list-tubes\r\n");
+    ckrespsub(fd0, "OK ");
+    ckresp(fd0,
+           "---\n"
+           "- default\n"
+           "- w\n"
+           "- u\n\r\n");
+
+    mustsend(fd0, "list-tube-used\r\n");
+    ckresp(fd0, "USING u\r\n");
+
+    mustsend(fd0, "list-tubes-watched\r\n");
+    ckrespsub(fd0, "OK ");
+    ckresp(fd0,
+           "---\n"
+           "- default\n"
+           "- w\n\r\n");
+
+    mustsend(fd0, "ignore default\r\n");
+    ckresp(fd0, "WATCHING 1\r\n");
+
+    mustsend(fd0, "list-tubes-watched\r\n");
+    ckrespsub(fd0, "OK ");
+    ckresp(fd0,
+           "---\n"
+           "- w\n\r\n");
+
+    mustsend(fd0, "ignore w\r\n");
+    ckresp(fd0, "NOT_IGNORED\r\n");
 }
 
 void

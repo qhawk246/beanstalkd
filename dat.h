@@ -17,6 +17,11 @@ typedef uint64_t      uint64;
 #define int64_t  do_not_use_int64_t
 #define uint64_t do_not_use_uint64_t
 
+/* TODO: typedefs of ms, job and tube should not hide the pointer.
+   Make them similar to other typedefs (Conn, Heap).
+   Maybem move each typedef next to the corresponding struct definition.
+   See issue #458. */
+
 typedef struct ms     *ms;
 typedef struct job    *job;
 typedef struct tube   *tube;
@@ -57,7 +62,12 @@ typedef int(FAlloc)(int, int);
 #define URGENT_THRESHOLD 1024
 #define JOB_DATA_SIZE_LIMIT_DEFAULT ((1 << 16) - 1)
 
-/* Maximum value (uint32) allowed in pri, delay and ttr parameters */
+// The maximum value that job_data_size_limit can be set to via "-z".
+// It could be up to INT32_MAX-2 (~2GB), but set it to 1024^3 (1GB).
+// The width is restricted by Jobrec.body_size that is int32.
+#define JOB_DATA_SIZE_LIMIT_MAX 1073741824
+
+// Maximum value (uint32) allowed in pri, delay and ttr parameters
 #define MAX_UINT32 4294967295
 
 #define UNUSED_PARAMETER(x) (void)(x)
@@ -122,7 +132,10 @@ enum // Jobrec.state
     Copy
 };
 
-// if you modify this struct, you must increment Walver above
+// If you modify this struct, you must increment Walver above,
+// Beanstalkd does not handle migration between different versions:
+// it will reject the old data and exit from the server.
+// TODO: Handle Walver migrations automatically.
 struct Jobrec {
     uint64 id;
     uint32 pri;
@@ -292,8 +305,8 @@ struct Conn {
     // while in_job_read is nonzero, we are in bit bucket mode and
     // in_job_read's meaning is inverted -- then it counts the bytes that
     // remain to be thrown away.
-    int in_job_read;
-    job in_job; // a job to be read from the client
+    int32 in_job_read;
+    job   in_job; // a job to be read from the client
 
     job out_job;
     int out_job_sent;
