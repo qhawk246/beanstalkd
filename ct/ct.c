@@ -167,7 +167,7 @@ waittest(Test *ts)
     if (pid == -1) {
         die(3, errno, "wait");
     }
-    killpg(pid, 9);
+    killpg(pid, SIGKILL);
 
     for (t=ts; t->f; t++) {
         if (t->pid == pid) {
@@ -337,7 +337,7 @@ runbenchn(Benchmark *b, int n)
     if (pid == -1) {
         die(3, errno, "wait");
     }
-    killpg(pid, 9);
+    killpg(pid, SIGKILL);
     rmtree(b->dir);
     if (b->status != 0) {
         putchar('\n');
@@ -525,7 +525,10 @@ readtokens()
 {
     int n = 1;
     char c, *s;
-    if ((s = strstr(getenv("MAKEFLAGS"), " --jobserver-fds="))) {
+    char *v = getenv("MAKEFLAGS");
+    if (v == NULL)
+        return n;
+    if ((s = strstr(v, " --jobserver-fds="))) {
         rjobfd = (int)strtol(s+17, &s, 10);  /* skip " --jobserver-fds=" */
         wjobfd = (int)strtol(s+1, NULL, 10); /* skip comma */
     }

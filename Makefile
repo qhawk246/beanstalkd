@@ -9,6 +9,10 @@ LDLIBS?=
 OS?=$(shell uname | tr 'A-Z' 'a-z')
 INSTALL?=install
 
+ifeq ($(OS),sunos)
+override LDFLAGS += -lxnet -lsocket -lnsl
+endif
+
 VERS=$(shell ./vers.sh)
 TARG=beanstalkd
 MOFILE=main.o
@@ -33,6 +37,7 @@ OFILES=\
 TOFILES=\
 	testheap.o\
 	testjobs.o\
+	testms.o\
 	testserv.o\
 	testutil.o\
 

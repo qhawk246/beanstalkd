@@ -1,17 +1,17 @@
+#include "ct/ct.h"
+#include "dat.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
-#include "ct/ct.h"
-#include "dat.h"
 
-static tube default_tube;
+static Tube *default_tube;
 
 void
 cttest_job_creation()
 {
-    job j;
+    Job *j;
 
     TUBE_ASSIGN(default_tube, make_tube("default"));
     j = make_job(1, 0, 1, 0, default_tube);
@@ -21,7 +21,7 @@ cttest_job_creation()
 void
 cttest_job_cmp_pris()
 {
-    job a, b;
+    Job *a, *b;
 
     TUBE_ASSIGN(default_tube, make_tube("default"));
     a = make_job(1, 0, 1, 0, default_tube);
@@ -33,7 +33,7 @@ cttest_job_cmp_pris()
 void
 cttest_job_cmp_ids()
 {
-    job a, b;
+    Job *a, *b;
 
     TUBE_ASSIGN(default_tube, make_tube("default"));
     a = make_job(1, 0, 1, 0, default_tube);
@@ -46,7 +46,7 @@ cttest_job_cmp_ids()
 void
 cttest_job_large_pris()
 {
-    job a, b;
+    Job *a, *b;
 
     TUBE_ASSIGN(default_tube, make_tube("default"));
     a = make_job(1, 0, 1, 0, default_tube);
@@ -63,7 +63,7 @@ cttest_job_large_pris()
 void
 cttest_job_hash_free()
 {
-    job j;
+    Job *j;
     uint64 jid = 83;
 
     TUBE_ASSIGN(default_tube, make_tube("default"));
@@ -76,7 +76,7 @@ cttest_job_hash_free()
 void
 cttest_job_hash_free_next()
 {
-    job a, b;
+    Job *a, *b;
     uint64 aid = 97, bid = 12386;
 
     TUBE_ASSIGN(default_tube, make_tube("default"));
@@ -93,7 +93,7 @@ cttest_job_hash_free_next()
 void
 cttest_job_all_jobs_used()
 {
-    job j, x;
+    Job *j, *x;
 
     TUBE_ASSIGN(default_tube, make_tube("default"));
     j = make_job(0, 0, 1, 0, default_tube);
@@ -132,6 +132,7 @@ ctbench_make_job(int n)
 {
     int i;
     TUBE_ASSIGN(default_tube, make_tube("default"));
+    ctresettimer();
     for (i = 0; i < n; i++) {
         make_job(0, 0, 1, 0, default_tube);
     }
